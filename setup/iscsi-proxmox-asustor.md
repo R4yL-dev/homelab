@@ -5,18 +5,22 @@
 Ce document décrit la procédure complète pour configurer un stockage iSCSI partagé entre un NAS Asustor AS6806T (ADM 5.1.2) et un ou plusieurs nœuds Proxmox VE, en isolant le trafic storage sur un réseau dédié 10GbE (`10.0.20.x`).
 
 ### Infrastructure
-
 | Équipement | IP Management | IP Storage (10G) |
 |---|---|---|
 | NAS Asustor AS6806T | 192.168.1.10 | 10.0.20.10 |
 | Proxmox pve1 | 192.168.1.20 | 10.0.20.20 |
 | Proxmox pve2 | 192.168.1.21 | 10.0.20.21 |
 
+### Câblage switch CRS317
+
+| Port | Connecté à | Bridge |
+|---|---|---|
+| sfp-sfpplus11 | NAS LAN2 (eth0) | br-vmstore |
+| sfp-sfpplus13 | pve1 nic3 | br-vmstore |
+| sfp-sfpplus15 | pve2 nic3 (à brancher) | br-vmstore |
+
 ### Pourquoi cette approche
-
-L'Asustor ADM ne permet pas de restreindre les portals iSCSI à une seule interface réseau — le NAS annonce le target sur **toutes** ses interfaces. La solution est de gérer la connexion iSCSI manuellement côté Proxmox pour forcer l'utilisation exclusive du réseau storage `10.0.20.x`, puis de créer le volume group LVM manuellement avant de l'enregistrer dans Proxmox.
-
-> ⚠️ Ne jamais ajouter un storage de type **iSCSI** dans Proxmox GUI — cela provoquerait une re-découverte automatique de tous les portals du NAS, y compris les interfaces management.
+L'Asustor ADM ne permet pas de restreindre les portals iSCSI à une seule interface réseau. Le NAS annonce le target sur **toutes** ses interfaces. La solution est de gérer la connexion iSCSI manuellement côté Proxmox pour forcer l'utilisation exclusive du réseau storage `10.0.20.x`, puis de créer le volume group LVM manuellement avant de l'enregistrer dans Proxmox.
 
 ---
 
@@ -25,7 +29,7 @@ L'Asustor ADM ne permet pas de restreindre les portals iSCSI à une seule interf
 1. Ouvrir **Gestionnaire de Stockage** → **iSCSI LUN**
 2. Cliquer **Créer**
 3. Remplir les paramètres du LUN :
-   - **Nom LUN** : `VMStore`
+   - **Nom LUN** : `vmstore`
    - **Emplacement** : `Volume 1` (volume SSD RAID10)
    - **Thin provisioning** : `Oui`
    - **Soutien cliché (snapshot)** : `Oui`
@@ -33,22 +37,19 @@ L'Asustor ADM ne permet pas de restreindre les portals iSCSI à une seule interf
 4. Cliquer **Suivant**
 
 ### Paramètres du Target
-
-- **Nom target** : `vmstore`
-- **IQN généré** : `iqn.2011-08.com.asustor:as6806t-435b57.vmstore`
+- **Nom target** : `target001`
+- **IQN généré** : `iqn.2011-08.com.asustor:as6806t-435b57.target001`
 - **CRC / Checksum** : décoché (inutile sur réseau local dédié)
-- **Authentification CHAP** : désactivée (à activer ultérieurement si nécessaire)
+- **Authentification CHAP** : désactivée (à activer ultérieurement)
 
 ### Mapping LUN
-
 - Sélectionner **Mapper iSCSI LUN existant**
-- Cocher le LUN `VMStore` (2.00 To)
+- Cocher le LUN `vmstore` (2.00 To)
 
-### Résultat attendu dans ADM
-
+### Confirmation
 Vérifier dans la vue **iSCSI** que :
-- Le target `vmstore` est en état **Prêt**
-- Le LUN `VMStore` est **En ligne**
+- Le target `target001` est en état **Prêt**
+- Le LUN `vmstore` est **En ligne**
 
 > **Note** : Le port iSCSI par défaut est `3260`. Ne pas activer iSNS.
 
@@ -64,7 +65,7 @@ Vérifier dans la vue **iSCSI** que :
 cat /etc/iscsi/initiatorname.iscsi
 ```
 
-Noter l'IQN — il sera visible dans l'interface ADM lors de la connexion.
+Noter l'IQN, il sera visible dans l'interface ADM lors de la connexion.
 
 ### 2.2 Découverte du target
 
@@ -72,12 +73,12 @@ Noter l'IQN — il sera visible dans l'interface ADM lors de la connexion.
 iscsiadm -m discovery -t sendtargets -p 10.0.20.10:3260
 ```
 
-Le NAS retourne le target sur **toutes ses interfaces** (comportement normal d'ADM) :
+Le NAS va retourner le target sur **toutes ses interfaces** (comportement normal d'ADM) :
 
 ```
-10.0.20.10:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.vmstore
-192.168.1.10:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.vmstore
-10.172.5.1:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.vmstore
+10.0.20.10:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.target001
+192.168.1.10:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.target001
+10.172.5.1:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.target001
 ...
 ```
 
@@ -86,9 +87,9 @@ Le NAS retourne le target sur **toutes ses interfaces** (comportement normal d'A
 Ne garder **que** le portal storage `10.0.20.10` :
 
 ```bash
-iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.vmstore -p 192.168.1.10:3260 --op delete
-iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.vmstore -p 10.172.5.1:3260 --op delete
-iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.vmstore -p 100.94.231.61:3260 --op delete
+iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.target001 -p 192.168.1.10:3260 --op delete
+iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.target001 -p 10.172.5.1:3260 --op delete
+iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.target001 -p 100.94.231.61:3260 --op delete
 ```
 
 Vérifier qu'il ne reste que le bon portal :
@@ -96,23 +97,23 @@ Vérifier qu'il ne reste que le bon portal :
 ```bash
 iscsiadm -m node
 # Doit afficher uniquement :
-# 10.0.20.10:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.vmstore
+# 10.0.20.10:3260,1 iqn.2011-08.com.asustor:as6806t-435b57.target001
 ```
 
-### 2.4 Connexion et persistance au boot
+### 2.4 Connexion et persistance
 
 ```bash
 # Se connecter
-iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.vmstore -p 10.0.20.10:3260 --login
+iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.target001 -p 10.0.20.10:3260 --login
 
 # Configurer le démarrage automatique au boot
-iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.vmstore -p 10.0.20.10:3260 --op update -n node.startup -v automatic
+iscsiadm -m node -T iqn.2011-08.com.asustor:as6806t-435b57.target001 -p 10.0.20.10:3260 --op update -n node.startup -v automatic
 ```
 
 ### 2.5 Vérifier la présence du disque
 
 ```bash
-lsblk | grep sda
+lsblk
 # Le LUN doit apparaître comme /dev/sda (2To)
 ```
 
@@ -124,7 +125,8 @@ lsblk | grep sda
 
 ```bash
 # Initialiser le disque iSCSI comme volume physique LVM
-pvcreate /dev/sda
+# Le flag -ff est nécessaire si des métadonnées LVM résiduelles existent
+pvcreate -ff /dev/sda
 
 # Créer le volume group
 vgcreate vg-vmstore /dev/sda
@@ -141,31 +143,9 @@ vg-vmstore   1   0   0 wz--n- <2.00t <2.00t
 
 ---
 
-## Étape 4 — Optimisation du scheduler I/O
+## Étape 4 — Ajout du storage dans Proxmox
 
-Pour des performances optimales sur le LUN iSCSI, configurer le scheduler I/O sur `none` côté Proxmox :
-
-```bash
-# Appliquer immédiatement
-echo none | tee /sys/block/sda/queue/scheduler
-
-# Rendre persistant au boot
-echo 'ACTION=="add|change", KERNEL=="sda", ATTR{queue/scheduler}="none"' | tee /etc/udev/rules.d/60-iscsi-scheduler.rules
-
-# Recharger udev
-udevadm control --reload-rules
-udevadm trigger
-
-# Vérifier
-cat /sys/block/sda/queue/scheduler
-# Doit afficher : [none] mq-deadline
-```
-
----
-
-## Étape 5 — Ajout du storage dans Proxmox
-
-> ⚠️ Utiliser le type **LVM** et non iSCSI dans Proxmox GUI.
+> ⚠️ Ne pas utiliser le type **iSCSI** dans Proxmox GUI — cela provoquerait une re-découverte automatique de tous les portals. Utiliser directement **LVM** sur le volume group créé manuellement.
 
 ### Dans Proxmox GUI : Datacenter → Storage → Add → LVM
 
@@ -179,7 +159,7 @@ cat /sys/block/sda/queue/scheduler
 
 ---
 
-## Étape 6 — Création d'une VM sur le storage iSCSI
+## Étape 5 — Création d'une VM sur le storage iSCSI
 
 Lors de la création d'une VM, pour l'onglet **Disks** :
 
@@ -196,9 +176,9 @@ Lors de la création d'une VM, pour l'onglet **Disks** :
 
 ---
 
-## Étape 7 — Ajout d'un deuxième nœud (pve2)
+## Étape 6 — Ajout de pve2 (à faire)
 
-Sur `pve2`, répéter les étapes **2.1 à 2.4** en adaptant l'IP du nœud (`10.0.20.21`), ainsi que l'**étape 4** pour le scheduler.
+Sur `pve2`, répéter les étapes **2.1 à 2.4** en adaptant l'IP du nœud (`10.0.20.21`).
 
 Le volume group `vg-vmstore` existe déjà sur le LUN — **ne pas relancer** `pvcreate` ni `vgcreate`.
 
@@ -209,31 +189,32 @@ vgscan
 vgchange -ay vg-vmstore
 ```
 
-Puis dans Proxmox GUI, ajouter le même storage LVM avec les mêmes paramètres qu'en étape 5.
+Puis dans Proxmox GUI, ajouter le même storage LVM avec les mêmes paramètres qu'en étape 4.
 
 ---
 
 ## Dépannage
 
 ### Les portals indésirables reviennent après suppression
-**Cause** : Un storage de type iSCSI dans Proxmox GUI re-découvre automatiquement tous les portals.  
-**Solution** : S'assurer qu'aucun storage de type **iSCSI** n'est présent dans Datacenter → Storage. Utiliser uniquement le type **LVM**.
+Cause : Un storage de type iSCSI dans Proxmox GUI re-découvre automatiquement tous les portals. S'assurer qu'aucun storage de type **iSCSI** n'est présent dans Datacenter → Storage.
 
 ### Erreur `Can't initialize physical volume without -ff`
-Des métadonnées LVM résiduelles sont présentes sur le disque.  
-**Solution** :
+Des métadonnées LVM résiduelles sont présentes sur le disque. Utiliser `pvcreate -ff /dev/sda`.
+
+### Erreur `Connection error 596: Connection timed out` lors de l'ajout LVM
+Se produit si un storage iSCSI Proxmox est encore présent et crée des sessions parasites. Supprimer le storage iSCSI de Proxmox GUI, déconnecter toutes les sessions (`iscsiadm -m node --logoutall=all`), supprimer les portals indésirables, puis recréer la connexion proprement.
+
+### Pas de session iSCSI après le reboot
+Le NAS démarre plus lentement que Proxmox. Si `iscsiadm -m session` ne retourne rien après le boot, reconnecter manuellement :
+
 ```bash
-pvcreate -ff /dev/sda
+iscsiadm -m node --loginall=automatic
+vgscan
+vgchange -ay vg-vmstore
 ```
 
 ### Vérifier la session iSCSI active
 ```bash
 iscsiadm -m session
 # Doit afficher uniquement la session via 10.0.20.10
-```
-
-### Vérifier le scheduler I/O
-```bash
-cat /sys/block/sda/queue/scheduler
-# Doit afficher : [none] mq-deadline
 ```
