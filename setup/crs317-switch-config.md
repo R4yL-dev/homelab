@@ -40,8 +40,8 @@ L'IP est configurée sur `bridge1` :
 | sfp-sfpplus12 | NAS LAN1 (backup, eth1) | Backup isolé | br-backup | 9000 |
 | sfp-sfpplus13 | pve1 nic3 (iSCSI) | Storage isolé | br-vmstore | 9000 |
 | sfp-sfpplus14 | pve1 nic2 (backup) | Backup isolé | br-backup | 9000 |
-| sfp-sfpplus15 | pve2 nic3 (iSCSI) — *à brancher* | Storage isolé | br-vmstore | 9000 |
-| sfp-sfpplus16 | pve2 nic2 (backup) — *à brancher* | Backup isolé | br-backup | 9000 |
+| sfp-sfpplus15 | pve2 nic3 (iSCSI) | Storage isolé | br-vmstore | 9000 | ✅ |
+| sfp-sfpplus16 | pve2 nic2 (backup) | Backup isolé | br-backup | 9000 | ✅ |
 
 ---
 
@@ -197,16 +197,9 @@ Résultats attendus :
 
 ---
 
-## 5. Ajout de pve2 (à faire)
+## 5. Ajout de pve2 ✅
 
-Quand pve2 sera branché sur sfp15 (iSCSI) et sfp16 (backup), le MTU est déjà configuré sur les
-deux ports. La config bridge et VLAN est déjà en place. Il suffira de vérifier que les liens
-sont actifs (flag `R`) après branchement :
-
-```routeros
-/interface bridge port print detail where interface=sfp-sfpplus15
-/interface bridge port print detail where interface=sfp-sfpplus16
-```
+pve2 est branché sur sfp15 (iSCSI) et sfp16 (backup). La config bridge et VLAN était déjà en place. Les liens sont actifs.
 
 ---
 

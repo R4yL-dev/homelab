@@ -84,9 +84,9 @@
 
 | VLAN | Interface physique | Adresse IP | Statut |
 |------|-------------------|------------|--------|
-| Home (temp.) | RJ45 nic0 → vmbr0 | 192.168.1.21/24 | 🔲 À brancher |
-| 20 — STORAGE | SFP+ nic3 | 10.0.20.21/24 | 🔲 À brancher |
-| 50 — BACKUP | SFP+ nic2 → nic2.50 | 10.0.50.21/24 | 🔲 À brancher |
+| Home (temp.) | RJ45 nic0 → vmbr0 | 192.168.1.21/24 | ✅ En place |
+| 20 — STORAGE | SFP+ nic3 | 10.0.20.21/24 | ✅ En place |
+| 50 — BACKUP | SFP+ nic2 → nic2.50 | 10.0.50.21/24 | ✅ En place |
 | 10 — MGMT | RJ45 nic0 → vmbr0 | 10.0.10.21/24 | 🔲 À implémenter |
 | 30 — MIGRATION | SFP+ nic2 → nic2.30 | 10.0.30.21/24 | 🔲 À implémenter |
 | 40 — CLUSTER | RJ45 nic0 → nic0.40 | 10.0.40.21/24 | 🔲 À implémenter |
@@ -143,8 +143,8 @@
 | sfp-sfpplus12 | NAS LAN1 (backup, eth1) | br-backup | Access untagged | VLAN 50 | 9000 | ✅ |
 | sfp-sfpplus13 | pve1 nic3 (iSCSI) | br-vmstore | Access direct | Aucun | 9000 | ✅ |
 | sfp-sfpplus14 | pve1 nic2 (backup) | br-backup | Trunk tagged | VLAN 50 | 9000 | ✅ |
-| sfp-sfpplus15 | pve2 nic3 (iSCSI) | br-vmstore | Access direct | Aucun | 9000 | 🔲 |
-| sfp-sfpplus16 | pve2 nic2 (backup) | br-backup | Trunk tagged | VLAN 50 | 9000 | 🔲 |
+| sfp-sfpplus15 | pve2 nic3 (iSCSI) | br-vmstore | Access direct | Aucun | 9000 | ✅ |
+| sfp-sfpplus16 | pve2 nic2 (backup) | br-backup | Trunk tagged | VLAN 50 | 9000 | ✅ |
 | sfp-sfpplus2–10 | Non connectés | — | — | — | — | — |
 
 #### Table VLAN br-backup
@@ -337,7 +337,7 @@ Le VG `vg-vmstore` est partagé entre pve1 et pve2 via iSCSI. Les disques VM son
 | pve1 — iSCSI + VG vg-vmstore | ✅ |
 | pve1 — VLAN 50 backup MTU 9000 | ✅ |
 | PBS (nasctl) — installé et opérationnel | ✅ |
-| pve2 — branchement et configuration | 🔲 |
+| pve2 — branchement et configuration | ✅ |
 | Cluster Proxmox (pve1 + pve2) | 🔲 |
 | OPNsense VM | 🔲 |
 | VLAN 10 management | 🔲 |

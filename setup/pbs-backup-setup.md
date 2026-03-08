@@ -229,7 +229,7 @@ ping -M do -s 8972 10.0.50.10   # ping NAS jumbo frames
 
 ---
 
-## 4. Configuration Proxmox pve2 — Interface VLAN 50 (à faire)
+## 4. Configuration Proxmox pve2 — Interface VLAN 50 ✅
 
 Même procédure que pve1. pve2 utilise son nic2 branché sur `sfp16` du CRS317.
 
@@ -518,9 +518,9 @@ Répéter pour **pve2** une fois configuré.
 
 ---
 
-## 12. Configuration de pve2 (à faire)
+## 12. Configuration de pve2 ✅
 
-Une fois pve2 disponible, les étapes suivantes sont à réaliser :
+pve2 est configuré. Les étapes suivantes ont été réalisées :
 
 1. **CRS317** : sfp16 est déjà membre de br-backup en trunk VLAN 50 — vérifier que le lien est actif après branchement
 2. **pve2** : Configurer `nic2.50` avec IP `10.0.50.21` et MTU 9000 (cf. section 4)
@@ -535,4 +535,4 @@ Une fois pve2 disponible, les étapes suivantes sont à réaliser :
 | NAS (eth1-br) | bridge sur eth1 | `10.0.50.10/24` | 9000 |
 | `nasctl` (eth2) | veth → eth1-br | `10.0.50.11/24` | 9000 |
 | pve1 (nic2.50) | VLAN 50 sur nic2 | `10.0.50.20/24` | 9000 |
-| pve2 (nic2.50) | VLAN 50 sur nic2 | `10.0.50.21/24` | 9000 |
+| pve2 (nic2.50) | VLAN 50 sur nic2 | `10.0.50.21/24` | 9000 | ✅ |
