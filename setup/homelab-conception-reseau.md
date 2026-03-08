@@ -13,9 +13,8 @@
 | VLAN ID | Nom | Rôle | Type de trafic | MTU | Gateway | Routage | Statut |
 |---------|-----|------|----------------|-----|---------|---------|--------|
 | 1 | Native | **Non utilisé** (sécurité) | — | — | — | — | — |
-| 20 | STORAGE | iSCSI stockage | I/O disque VMs | 9000 | Aucune | Isolé | ✅ En place |
 | 30 | MIGRATION | Live migration Proxmox | Transfert mémoire VM | 9000 | Aucune | Isolé | 🔲 À implémenter |
-| 40 | CLUSTER | Corosync + Qdevice | Heartbeat cluster | 1500 | Aucune | Isolé | 🔲 À implémenter |
+| 40 | CLUSTER | Corosync + Qdevice | Heartbeat cluster | 1500 | Aucune | Isolé | ✅ En place |
 | 50 | BACKUP | Backup vers PBS | Transfert données backup | 9000 | Aucune | Isolé | ✅ En place |
 | 10 | MGMT | Management infrastructure | Web UI, SSH | 1500 | 10.0.10.1 | Via OPNsense | 🔲 À implémenter |
 | 100 | WAN-TRANSIT | Lien OPNsense ↔ Box FAI | Trafic Internet | 1500 | 192.168.1.1 | Via OPNsense | 🔲 À implémenter |
@@ -26,18 +25,17 @@
 
 ### 1.2 Matrice de Flux Inter-VLAN (cible)
 
-| Source ↓ \ Dest → | MGMT | STORAGE | MIGR | CLUSTER | BACKUP | WAN | LAN-VMS | DMZ |
-|--------------------|:----:|:-------:|:----:|:-------:|:------:|:---:|:-------:|:---:|
-| **MGMT (10)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **STORAGE (20)** | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **MIGRATION (30)** | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **CLUSTER (40)** | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **BACKUP (50)** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| **WAN (100)** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | via OPNs | via OPNs |
-| **LAN-VMS (110)** | ❌ | ❌ | ❌ | ❌ | ❌ | via OPNs | ✅ | ❌ |
-| **DMZ (120)** | ❌ | ❌ | ❌ | ❌ | ❌ | via OPNs | ❌ | ✅ |
+| Source ↓ \ Dest → | MGMT | MIGR | CLUSTER | BACKUP | WAN | LAN-VMS | DMZ |
+|--------------------|:----:|:----:|:-------:|:------:|:---:|:-------:|:---:|
+| **MGMT (10)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **MIGRATION (30)** | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **CLUSTER (40)** | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **BACKUP (50)** | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| **WAN (100)** | ❌ | ❌ | ❌ | ❌ | ✅ | via OPNs | via OPNs |
+| **LAN-VMS (110)** | ❌ | ❌ | ❌ | ❌ | via OPNs | ✅ | ❌ |
+| **DMZ (120)** | ❌ | ❌ | ❌ | ❌ | via OPNs | ❌ | ✅ |
 
-> **Principe :** Les VLANs infra (20, 30, 40, 50) sont strictement isolés — aucune route entre eux.
+> **Principe :** Les VLANs infra (30, 40, 50) sont strictement isolés — aucune route entre eux.
 > Seul le VLAN MGMT (10) pourra atteindre tous les autres une fois OPNsense en place.
 
 ---
@@ -74,31 +72,31 @@
 | VLAN | Interface physique | Adresse IP actuelle | Statut |
 |------|-------------------|---------------------|--------|
 | Home (temp.) | RJ45 nic0 → vmbr0 | 192.168.1.20/24 | ✅ En place |
-| 20 — STORAGE | SFP+ nic3 | 10.0.20.20/24 | ✅ En place |
 | 50 — BACKUP | SFP+ nic2 → nic2.50 | 10.0.50.20/24 | ✅ En place |
+| 40 — CLUSTER | RJ45 nic1 | 10.0.40.20/24 | ✅ En place |
+| 20 — VMSTORE | SFP+ nic3 | 10.0.20.20/24 | ✅ En place |
 | 10 — MGMT | RJ45 nic0 → vmbr0 | 10.0.10.20/24 | 🔲 À implémenter |
 | 30 — MIGRATION | SFP+ nic2 → nic2.30 | 10.0.30.20/24 | 🔲 À implémenter |
-| 40 — CLUSTER | RJ45 nic0 → nic0.40 | 10.0.40.20/24 | 🔲 À implémenter |
 
 #### Nœud 2 — Minisforum MS-01 (pve2)
 
 | VLAN | Interface physique | Adresse IP | Statut |
 |------|-------------------|------------|--------|
 | Home (temp.) | RJ45 nic0 → vmbr0 | 192.168.1.21/24 | ✅ En place |
-| 20 — STORAGE | SFP+ nic3 | 10.0.20.21/24 | ✅ En place |
 | 50 — BACKUP | SFP+ nic2 → nic2.50 | 10.0.50.21/24 | ✅ En place |
+| 40 — CLUSTER | RJ45 nic1 | 10.0.40.21/24 | ✅ En place |
+| 20 — VMSTORE | SFP+ nic3 | 10.0.20.21/24 | ✅ En place |
 | 10 — MGMT | RJ45 nic0 → vmbr0 | 10.0.10.21/24 | 🔲 À implémenter |
 | 30 — MIGRATION | SFP+ nic2 → nic2.30 | 10.0.30.21/24 | 🔲 À implémenter |
-| 40 — CLUSTER | RJ45 nic0 → nic0.40 | 10.0.40.21/24 | 🔲 À implémenter |
 
 #### NAS — Asustor AS6806T
 
 | Interface physique | IP actuelle | Réseau | Statut |
 |---|---|---|---|
 | LAN1 (10G eth1) | 10.0.50.10/24 | Backup VLAN 50 | ✅ En place |
-| LAN2 (10G eth0) | 10.0.20.10/24 | iSCSI VLAN 20 | ✅ En place |
+| LAN2 (10G eth0) | — | Non utilisé (ex-iSCSI) | — |
 | LAN3 (2.5G eth3) | 192.168.1.10/24 | Management home | ✅ En place |
-| LAN4 (2.5G eth2) | — | Non utilisé | — |
+| LAN4 (2.5G eth2) | 10.0.40.10/24 | Cluster VLAN 40 | ✅ En place |
 
 #### PBS (container LXC nasctl sur NAS)
 
@@ -106,6 +104,7 @@
 |---|---|---|---|
 | eth0 | 192.168.1.11/24 | Management home | ✅ En place |
 | eth2 | 10.0.50.11/24 | Backup VLAN 50 | ✅ En place |
+| eth3 | 10.0.40.11/24 | Cluster VLAN 40 | ✅ En place |
 
 #### OPNsense VM (à implémenter)
 
@@ -130,7 +129,6 @@
 
 | Bridge | MTU | VLAN Filtering | Rôle |
 |---|---|---|---|
-| `br-vmstore` | 9000 | Non | iSCSI isolé, réseau `10.0.20.0/24` |
 | `br-backup` | 9000 | Oui | Backup VLAN 50 + migration VLAN 30 (futur) |
 | `bridge1` | 1500 | Oui | Uplink CRS310 + IP management switch |
 
@@ -139,11 +137,11 @@
 | Port | Connecté à | Bridge | Mode | VLAN | MTU | Statut |
 |---|---|---|---|---|---|---|
 | sfp-sfpplus1 | CRS310 uplink | bridge1 | Trunk admit-all | — | 1500 | ✅ |
-| sfp-sfpplus11 | NAS LAN2 (iSCSI, eth0) | br-vmstore | Access direct | Aucun | 9000 | ✅ |
+| sfp-sfpplus11 | NAS LAN2 (eth0) | — | Non connecté (ex-iSCSI) | — | — | — |
 | sfp-sfpplus12 | NAS LAN1 (backup, eth1) | br-backup | Access untagged | VLAN 50 | 9000 | ✅ |
-| sfp-sfpplus13 | pve1 nic3 (iSCSI) | br-vmstore | Access direct | Aucun | 9000 | ✅ |
+| sfp-sfpplus13 | pve1 nic3 | — | Non connecté (ex-iSCSI) | — | — | — |
 | sfp-sfpplus14 | pve1 nic2 (backup) | br-backup | Trunk tagged | VLAN 50 | 9000 | ✅ |
-| sfp-sfpplus15 | pve2 nic3 (iSCSI) | br-vmstore | Access direct | Aucun | 9000 | ✅ |
+| sfp-sfpplus15 | pve2 nic3 | — | Non connecté (ex-iSCSI) | — | — | — |
 | sfp-sfpplus16 | pve2 nic2 (backup) | br-backup | Trunk tagged | VLAN 50 | 9000 | ✅ |
 | sfp-sfpplus2–10 | Non connectés | — | — | — | — | — |
 
@@ -172,11 +170,15 @@
 
 | Port | Connecté à | Statut |
 |---|---|---|
-| sfp-sfpplus2 | CRS317 uplink | ✅ |
+| sfp-sfpplus1 | CRS317 uplink | ✅ |
 | ether1 | Réseau home (box FAI) | ✅ |
-| ether7 | NAS LAN3 (management) | ✅ |
-| ether8 | pve1 nic0 (management) | ✅ |
-| ether2–6, sfp-sfpplus1 | Non connectés | — |
+| ether3 | pve1 nic1 (cluster) | ✅ |
+| ether4 | pve1 nic0 (management) | ✅ |
+| ether5 | pve2 nic1 (cluster) | ✅ |
+| ether6 | pve2 nic0 (management) | ✅ |
+| ether7 | NAS LAN4 (cluster) | ✅ |
+| ether8 | NAS LAN3 (management) | ✅ |
+| ether2, sfp-sfpplus2 | Non connectés | — |
 
 #### Plan de câblage cible (après implémentation VLAN)
 
@@ -233,33 +235,27 @@ Le trunk sfp1↔sfp1 transporte tout le trafic sans VLAN filtering (bridge flat 
    │           CRS310-8G+2S+IN                         │
    │           IP: 192.168.1.2                         │
    │                                                   │
-   │  ether1    ether7    ether8    sfp+2               │
-   │  Box FAI   NAS       pve1      CRS317              │
-   │            LAN3      nic0      uplink              │
+   │  ether1  ether3  ether4  ether5  ether6  ether7  ether8  sfp+1  │
+   │  Box     pve1    pve1    pve2    pve2    NAS     NAS     CRS317  │
+   │  FAI     quorum  mgmt    quorum  mgmt    quorum  mgmt    uplink  │
    └───────────────────────┬───────────────────────────┘
-                           │ sfp+2 ↔ sfp+1
+                           │ sfp+1 ↔ sfp+1
    ┌───────────────────────┴───────────────────────────┐
    │           CRS317-1G-16S+RM                        │
    │           IP: 192.168.1.3                         │
    │                                                   │
-   │  sfp+1   sfp+11  sfp+12  sfp+13  sfp+14           │
-   │  CRS310  NAS     NAS     pve1    pve1              │
-   │  uplink  LAN2    LAN1    nic3    nic2              │
-   │          iSCSI   backup  iSCSI   backup            │
-   └──────┬──────┬───────┬────────┬───────────────────┘
-          │      │       │        │
-     ┌────┴──┐ ┌─┴────┐ ┌┴─────┐ ┌┴─────┐
-     │  NAS  │ │  NAS │ │ pve1 │ │ pve1 │
-     │ LAN2  │ │ LAN1 │ │ nic3 │ │ nic2 │
-     │iSCSI  │ │backup│ │iSCSI │ │backup│
-     │10.0.  │ │10.0. │ │10.0. │ │10.0. │
-     │20.10  │ │50.10 │ │20.20 │ │50.20 │
-     └───────┘ └──────┘ └──────┘ └──────┘
+   │  sfp+1   sfp+12  sfp+14  sfp+16  │
+   │  CRS310  NAS     pve1    pve2    │
+   │  uplink  LAN1    nic2    nic2    │
+   │          backup  backup  backup  │
+   └───────────────────────────────────────────────────┘
 ```
 
-### 5.2 Câblage cible (après ajout pve2)
+> sfp11, sfp13, sfp15 (ex-iSCSI) sont câblés mais non utilisés depuis la migration vers NFS.
 
-sfp+15 → pve2 nic3 (iSCSI), sfp+16 → pve2 nic2 (backup) seront ajoutés.
+### 5.2 Câblage cible (après implémentation VLAN 10 / OPNsense)
+
+Le trunk CRS310 ↔ CRS317 sera étendu pour porter les VLANs 10, 100, 110, 120. Le CRS310 recevra une configuration VLAN filtering complète.
 
 ---
 
@@ -270,24 +266,37 @@ sfp+15 → pve2 nic3 (iSCSI), sfp+16 → pve2 nic2 (backup) seront ajoutés.
 | Interface | Bridge/VLAN | IP | Commentaire |
 |---|---|---|---|
 | nic0 | vmbr0 | 192.168.1.20/24 | Management home (temporaire) |
+| nic1 | — | 10.0.40.20/24 | Cluster VLAN 40 |
 | nic2 | — | — | Port physique backup, MTU 9000 |
 | nic2.50 | — | 10.0.50.20/24 | Backup VLAN 50, MTU 9000 |
-| nic3 | — | 10.0.20.20/24 | iSCSI, MTU 9000 |
+| nic3 | — | 10.0.20.20/24 | VMStore NFS, MTU 9000 |
 
 ### 6.2 NAS Asustor AS6806T (état actuel)
 
 | Interface | IP | Réseau | Connecté à |
 |---|---|---|---|
-| eth0 (LAN2) | 10.0.20.10/24 | iSCSI | CRS317 sfp11 |
+| eth0 (LAN2) | 10.0.20.10/24 | VMStore NFS | CRS317 sfp11 |
 | eth1 (LAN1) | 10.0.50.10/24 via eth1-br | Backup VLAN 50 | CRS317 sfp12 |
-| eth3 (LAN3) | 192.168.1.10/24 | Management home | CRS310 ether7 |
+| eth2 (LAN4) | 10.0.40.10/24 via eth2-br | Cluster VLAN 40 | CRS310 ether7 |
+| eth3 (LAN3) | 192.168.1.10/24 | Management home | CRS310 ether8 |
 
-### 6.3 Container nasctl (PBS)
+### 6.3 Container nasctl (PBS + Qdevice)
 
 | Interface | IP | Réseau |
 |---|---|---|
 | eth0 | 192.168.1.11/24 | Management home |
 | eth2 | 10.0.50.11/24 | Backup VLAN 50 (via eth1-br) |
+| eth3 | 10.0.40.11/24 | Cluster VLAN 40 (via eth2-br) |
+
+### 6.4 pve2 (état actuel)
+
+| Interface | Bridge/VLAN | IP | Commentaire |
+|---|---|---|---|
+| nic0 | vmbr0 | 192.168.1.21/24 | Management home (temporaire) |
+| nic1 | — | 10.0.40.21/24 | Cluster VLAN 40 |
+| nic2 | — | — | Port physique backup, MTU 9000 |
+| nic2.50 | — | 10.0.50.21/24 | Backup VLAN 50, MTU 9000 |
+| nic3 | — | 10.0.20.21/24 | VMStore NFS, MTU 9000 |
 
 ---
 
@@ -312,13 +321,15 @@ Le veth connectant le container nasctl à `eth1-br` est recréé à chaque déma
 un nom aléatoire et MTU 1500. Le script S45eth1-bridge contient une boucle qui monte le MTU de
 tous les membres de eth1-br (hors eth1) à 9000 après chaque démarrage de container.
 
-### 7.3 iSCSI — connexion manuelle obligatoire
+### 7.3 VMStore — NFS depuis le NAS
 
-ADM annonce le target iSCSI sur toutes ses interfaces. Les portals management et NAT interne doivent être supprimés manuellement pour forcer le trafic sur `10.0.20.0/24` uniquement. Voir `iscsi-proxmox-asustor.md`.
+Le storage partagé `VMStore` est un share NFS monté depuis le NAS (`10.0.20.10:/volume1/VMStore`) via un réseau dédié flat `10.0.20.0/24` (br-vmstore sur CRS317, MTU 9000). Il supporte la live migration et les snapshots VM (format qcow2).
 
-### 7.4 LVM Thin sur iSCSI partagé
+Le réseau VMStore est complètement séparé du réseau backup PBS (VLAN 50) :
+- pve1 nic3 → sfp13 → br-vmstore → sfp11 → NAS eth0 (LAN2)
+- pve2 nic3 → sfp15 → br-vmstore → sfp11 → NAS eth0 (LAN2)
 
-Le VG `vg-vmstore` est partagé entre pve1 et pve2 via iSCSI. Les disques VM sont sur un thin pool LVM — les snapshots live ne sont pas supportés sur ce type de storage.
+Le share NFS est configuré dans ADM avec les droits `Lecture & Écriture`, `root(0)` pour le mapping, en mode synchrone, accessible depuis `10.0.20.0/24`.
 
 ---
 
@@ -326,21 +337,24 @@ Le VG `vg-vmstore` est partagé entre pve1 et pve2 via iSCSI. Les disques VM son
 
 | Composant | Statut |
 |---|---|
-| CRS317 — bridge br-vmstore (iSCSI) | ✅ |
 | CRS317 — bridge br-backup (backup MTU 9000) | ✅ |
 | CRS317 — bridge1 (uplink uniquement) | ✅ |
-| CRS317 — MTU 9000 iSCSI | ✅ |
 | CRS317 — MTU 9000 backup | ✅ |
 | CRS310 — bridge flat management | ✅ |
-| NAS — iSCSI LUN + target | ✅ |
+| CRS310 — br-cluster (VLAN 40) | ✅ |
+| NAS — share NFS VMStore (10.0.20.10:/volume1/VMStore) | ✅ |
 | NAS — bridge eth1-br backup MTU 9000 | ✅ |
-| pve1 — iSCSI + VG vg-vmstore | ✅ |
+| NAS — bridge eth2-br cluster | ✅ |
 | pve1 — VLAN 50 backup MTU 9000 | ✅ |
+| pve1 — VMStore NFS monté | ✅ |
 | PBS (nasctl) — installé et opérationnel | ✅ |
 | pve2 — branchement et configuration | ✅ |
-| Cluster Proxmox (pve1 + pve2) | 🔲 |
+| pve2 — VMStore NFS monté | ✅ |
+| Cluster Proxmox (pve1 + pve2) | ✅ |
+| Qdevice (nasctl) | ✅ |
+| Live migration via NFS | ✅ |
 | OPNsense VM | 🔲 |
 | VLAN 10 management | 🔲 |
-| VLAN 30 live migration | 🔲 |
-| VLAN 40 Corosync | 🔲 |
+| VLAN 30 live migration dédié | 🔲 |
+| VLAN 40 Corosync | ✅ |
 | VLAN 100/110/120 trafic VMs | 🔲 |

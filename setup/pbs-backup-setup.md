@@ -30,7 +30,7 @@ NAS (eth1)  ──── sfp12 ──┘
 
 ## 1. Configuration MikroTik CRS317 — bridge br-backup
 
-Le réseau backup utilise un bridge dédié `br-backup` à MTU 9000, sur le modèle du bridge iSCSI
+Le réseau backup utilise un bridge dédié `br-backup` à MTU 9000.
 `br-vmstore`. Le VLAN filtering est activé pour permettre d'y ajouter le futur VLAN 30
 (live migration) sur le même lien physique.
 

@@ -8,15 +8,14 @@
 
 ## 1. Vue d'ensemble
 
-Le CRS317 est le switch core 10G du homelab. Il gère exclusivement le trafic storage et backup entre les nœuds Proxmox et le NAS. Le trafic management ne passe pas par ce switch — il est entièrement géré par le CRS310.
+Le CRS317 est le switch core 10G du homelab. Il gère le trafic backup entre les nœuds Proxmox et le NAS. Le trafic management ne passe pas par ce switch — il est entièrement géré par le CRS310.
 
 ### 1.1 Rôle dans l'infrastructure
 
 | Rôle | Détail |
 |---|---|
-| Switch core 10G | Backbone est-ouest storage/backup |
+| Switch core 10G | Backbone est-ouest backup |
 | Uplink vers CRS310 | sfp-sfpplus1 (trunk) |
-| Isolation storage | Bridge dédié `br-vmstore` sans VLAN |
 | Backup + migration | Bridge dédié `br-backup` avec VLAN filtering |
 
 ### 1.2 Accès management
@@ -36,24 +35,22 @@ L'IP est configurée sur `bridge1` :
 |---|---|---|---|---|
 | sfp-sfpplus1 | CRS310 (uplink) | Trunk management | bridge1 | 1500 |
 | sfp-sfpplus2–10 | Non connectés | — | — | — |
-| sfp-sfpplus11 | NAS LAN2 (iSCSI, eth0) | Storage isolé | br-vmstore | 9000 |
+| sfp-sfpplus11 | NAS LAN2 (VMStore NFS, eth0) | VMStore isolé | br-vmstore | 9000 |
 | sfp-sfpplus12 | NAS LAN1 (backup, eth1) | Backup isolé | br-backup | 9000 |
-| sfp-sfpplus13 | pve1 nic3 (iSCSI) | Storage isolé | br-vmstore | 9000 |
+| sfp-sfpplus13 | pve1 nic3 (VMStore NFS) | VMStore isolé | br-vmstore | 9000 |
 | sfp-sfpplus14 | pve1 nic2 (backup) | Backup isolé | br-backup | 9000 |
-| sfp-sfpplus15 | pve2 nic3 (iSCSI) | Storage isolé | br-vmstore | 9000 | ✅ |
-| sfp-sfpplus16 | pve2 nic2 (backup) | Backup isolé | br-backup | 9000 | ✅ |
+| sfp-sfpplus15 | pve2 nic3 (VMStore NFS) | VMStore isolé | br-vmstore | 9000 |
+| sfp-sfpplus16 | pve2 nic2 (backup) | Backup isolé | br-backup | 9000 |
 
 ---
 
 ## 3. Architecture des bridges
 
-### 3.1 br-vmstore — Storage iSCSI isolé
+### 3.1 br-vmstore — VMStore NFS isolé
 
-Bridge dédié au trafic iSCSI. Pas de VLAN filtering, pas de routage. Réseau `10.0.20.0/24`.
+Bridge dédié au trafic NFS VMStore. Pas de VLAN filtering, pas de routage. Réseau `10.0.20.0/24`, MTU 9000.
 
-- MTU : 9000
-- VLAN filtering : non
-- Membres : sfp11 (NAS), sfp13 (pve1), sfp15 (pve2 — inactif)
+- Membres : sfp11 (NAS LAN2), sfp13 (pve1 nic3), sfp15 (pve2 nic3)
 
 ### 3.2 br-backup — Backup + migration
 
@@ -62,7 +59,7 @@ permettre plusieurs VLANs sur le même lien physique nic2 des nœuds Proxmox.
 
 - MTU : 9000
 - VLAN filtering : oui
-- Membres : sfp12 (NAS), sfp14 (pve1), sfp16 (pve2 — inactif)
+- Membres : sfp12 (NAS), sfp14 (pve1), sfp16 (pve2)
 
 ### 3.3 bridge1 — Uplink management uniquement
 
@@ -100,7 +97,7 @@ Connecter un câble sur le port `ether1` (RJ45 1G) du CRS317. Par défaut, Route
 /ip route add gateway=192.168.1.1
 ```
 
-### 4.3 Créer le bridge br-vmstore (iSCSI, MTU 9000)
+### 4.3 Créer le bridge br-vmstore (VMStore NFS, MTU 9000)
 
 ```routeros
 /interface bridge add name=br-vmstore mtu=9000 vlan-filtering=no protocol-mode=rstp
@@ -118,12 +115,12 @@ Connecter un câble sur le port `ether1` (RJ45 1G) du CRS317. Par défaut, Route
 /interface bridge add name=bridge1 mtu=1500 vlan-filtering=yes protocol-mode=rstp
 ```
 
-### 4.6 Configurer le MTU et l2mtu sur tous les ports 10G
+### 4.6 Configurer le MTU et l2mtu sur les ports 10G
 
 > L'ordre est critique : l2mtu d'abord, puis mtu.
 
 ```routeros
-# iSCSI
+# VMStore NFS
 /interface set sfp-sfpplus11 l2mtu=9018 mtu=9000
 /interface set sfp-sfpplus13 l2mtu=9018 mtu=9000
 /interface set sfp-sfpplus15 l2mtu=9018 mtu=9000
@@ -137,7 +134,7 @@ Connecter un câble sur le port `ether1` (RJ45 1G) du CRS317. Par défaut, Route
 ### 4.7 Ajouter les ports dans les bridges
 
 ```routeros
-# br-vmstore — iSCSI (pas de VLAN)
+# br-vmstore — VMStore NFS (flat, pas de VLAN)
 /interface bridge port add bridge=br-vmstore interface=sfp-sfpplus11 hw=yes
 /interface bridge port add bridge=br-vmstore interface=sfp-sfpplus13 hw=yes
 /interface bridge port add bridge=br-vmstore interface=sfp-sfpplus15 hw=yes
@@ -171,6 +168,9 @@ Connecter un câble sur le port `ether1` (RJ45 1G) du CRS317. Par défaut, Route
 # Vérifier les bridges
 /interface bridge print
 
+# Vérifier les ports de br-vmstore
+/interface bridge port print detail where bridge=br-vmstore
+
 # Vérifier les ports de br-backup
 /interface bridge port print detail where bridge=br-backup
 
@@ -199,28 +199,25 @@ Résultats attendus :
 
 ## 5. Ajout de pve2 ✅
 
-pve2 est branché sur sfp15 (iSCSI) et sfp16 (backup). La config bridge et VLAN était déjà en place. Les liens sont actifs.
+pve2 est branché sur sfp16 (backup). La config bridge et VLAN était déjà en place. Le lien est actif.
 
 ---
 
 ## 6. Dépannage
 
-### br-backup ou br-vmstore affiche `MTU > L2MTU`
+### br-backup affiche `MTU > L2MTU`
 
 Cause : Un port membre a un l2mtu insuffisant (1584 au lieu de 9018).
 
 ```routeros
 # Identifier le port fautif
-/interface print detail where name~"sfp-sfpplus1[1-6]"
+/interface print detail where name~"sfp-sfpplus1[2,4,6]"
 # Corriger
 /interface set sfp-sfpplus<X> l2mtu=9018 mtu=9000
 # Retirer et remettre le port dans le bridge pour forcer la mise à jour
 /interface bridge port remove [find interface=sfp-sfpplus<X>]
-/interface bridge port add bridge=<bridge> interface=sfp-sfpplus<X> hw=yes
+/interface bridge port add bridge=br-backup interface=sfp-sfpplus<X> hw=yes
 ```
-
-> Penser à vérifier sfp16 (pve2, inactif) — un port inactif membre d'un bridge peut quand même
-> brider son actual-mtu.
 
 ### Perte d'accès SSH au switch pendant la configuration
 
@@ -236,3 +233,4 @@ qu'il apparaît dans `current-untagged` du VLAN 50 sur br-backup :
 /interface bridge vlan print detail where vlan-ids=50
 /interface bridge port print detail where interface=sfp-sfpplus12
 ```
+
