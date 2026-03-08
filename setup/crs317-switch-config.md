@@ -17,7 +17,7 @@ Le CRS317 est le switch core 10G du homelab. Il gère exclusivement le trafic st
 | Switch core 10G | Backbone est-ouest storage/backup |
 | Uplink vers CRS310 | sfp-sfpplus1 (trunk) |
 | Isolation storage | Bridge dédié `br-vmstore` sans VLAN |
-| Backup VLAN 50 | `bridge1` avec VLAN filtering |
+| Backup + migration | Bridge dédié `br-backup` avec VLAN filtering |
 
 ### 1.2 Accès management
 
@@ -36,14 +36,12 @@ L'IP est configurée sur `bridge1` :
 |---|---|---|---|---|
 | sfp-sfpplus1 | CRS310 (uplink) | Trunk management | bridge1 | 1500 |
 | sfp-sfpplus2–10 | Non connectés | — | — | — |
-| sfp-sfpplus11 | NAS LAN1 (backup) | VLAN 50 access | bridge1 | 1500 |
-| sfp-sfpplus12 | NAS LAN2 (iSCSI) | Storage isolé | br-vmstore | 9000 |
+| sfp-sfpplus11 | NAS LAN2 (iSCSI, eth0) | Storage isolé | br-vmstore | 9000 |
+| sfp-sfpplus12 | NAS LAN1 (backup, eth1) | Backup isolé | br-backup | 9000 |
 | sfp-sfpplus13 | pve1 nic3 (iSCSI) | Storage isolé | br-vmstore | 9000 |
-| sfp-sfpplus14 | pve1 nic2 (backup) | VLAN 50 trunk | bridge1 | 9000 |
+| sfp-sfpplus14 | pve1 nic2 (backup) | Backup isolé | br-backup | 9000 |
 | sfp-sfpplus15 | pve2 nic3 (iSCSI) — *à brancher* | Storage isolé | br-vmstore | 9000 |
-| sfp-sfpplus16 | pve2 nic2 (backup) — *à brancher* | VLAN 50 trunk | bridge1 | 1500* |
-
-> **Note sfp16 :** MTU à passer à 9000/l2mtu 9018 lors du branchement de pve2.
+| sfp-sfpplus16 | pve2 nic2 (backup) — *à brancher* | Backup isolé | br-backup | 9000 |
 
 ---
 
@@ -55,24 +53,35 @@ Bridge dédié au trafic iSCSI. Pas de VLAN filtering, pas de routage. Réseau `
 
 - MTU : 9000
 - VLAN filtering : non
-- Membres : sfp12 (NAS), sfp13 (pve1), sfp15 (pve2 — inactif)
+- Membres : sfp11 (NAS), sfp13 (pve1), sfp15 (pve2 — inactif)
 
-### 3.2 bridge1 — Backup + uplink
+### 3.2 br-backup — Backup + migration
 
-Bridge principal gérant le VLAN 50 (backup) et l'uplink vers le CRS310. VLAN filtering activé.
+Bridge dédié au trafic backup (VLAN 50) et futur migration (VLAN 30). VLAN filtering activé pour
+permettre plusieurs VLANs sur le même lien physique nic2 des nœuds Proxmox.
+
+- MTU : 9000
+- VLAN filtering : oui
+- Membres : sfp12 (NAS), sfp14 (pve1), sfp16 (pve2 — inactif)
+
+### 3.3 bridge1 — Uplink management uniquement
+
+Bridge minimal portant uniquement l'uplink vers le CRS310 et l'IP de management du switch.
 
 - MTU : 1500
 - VLAN filtering : oui
-- Membres : sfp1 (uplink), sfp11 (NAS backup), sfp14 (pve1), sfp16 (pve2 — inactif)
+- Membres : sfp1 (uplink CRS310)
 
-### 3.3 Table VLAN sur bridge1
+### 3.4 Table VLAN sur br-backup
 
 | VLAN | Tagged | Untagged | Usage |
 |---|---|---|---|
-| 50 | sfp1, sfp14, sfp16 | sfp11 | Backup PBS |
+| 50 | sfp14, sfp16 | sfp12 | Backup PBS |
+| 30 | sfp14, sfp16 | — | Live migration (à implémenter) |
 
-> sfp11 reçoit le VLAN 50 en **untagged** car le NAS ne fait pas de VLAN tagging.  
-> sfp14 et sfp16 reçoivent le VLAN 50 en **tagged** car Proxmox fait le tagging (nic2.50).
+> sfp12 reçoit le VLAN 50 en **untagged** car le NAS ne fait pas de VLAN tagging.  
+> sfp14 et sfp16 reçoivent le VLAN 50 en **tagged** car Proxmox fait le tagging (nic2.50).  
+> sfp1 (uplink CRS310) **ne porte pas** le VLAN 50 — le trafic backup reste local au CRS317.
 
 ---
 
@@ -97,133 +106,140 @@ Connecter un câble sur le port `ether1` (RJ45 1G) du CRS317. Par défaut, Route
 /interface bridge add name=br-vmstore mtu=9000 vlan-filtering=no protocol-mode=rstp
 ```
 
-### 4.4 Créer le bridge1 (backup + uplink, VLAN filtering)
+### 4.4 Créer le bridge br-backup (backup + migration, MTU 9000)
+
+```routeros
+/interface bridge add name=br-backup mtu=9000 vlan-filtering=yes protocol-mode=rstp
+```
+
+### 4.5 Créer le bridge1 (uplink management uniquement)
 
 ```routeros
 /interface bridge add name=bridge1 mtu=1500 vlan-filtering=yes protocol-mode=rstp
 ```
 
-### 4.5 Configurer le MTU et l2mtu sur les ports iSCSI
+### 4.6 Configurer le MTU et l2mtu sur tous les ports 10G
 
 > L'ordre est critique : l2mtu d'abord, puis mtu.
 
 ```routeros
-/interface set sfp-sfpplus12 l2mtu=9018 mtu=9000
+# iSCSI
+/interface set sfp-sfpplus11 l2mtu=9018 mtu=9000
 /interface set sfp-sfpplus13 l2mtu=9018 mtu=9000
-/interface set sfp-sfpplus14 l2mtu=9018 mtu=9000
 /interface set sfp-sfpplus15 l2mtu=9018 mtu=9000
+
+# Backup + migration
+/interface set sfp-sfpplus12 l2mtu=9018 mtu=9000
+/interface set sfp-sfpplus14 l2mtu=9018 mtu=9000
+/interface set sfp-sfpplus16 l2mtu=9018 mtu=9000
 ```
 
-> sfp14 (pve1 backup) est aussi en 9000 pour anticiper la live migration future.  
-> sfp16 (pve2 backup) sera configuré lors du branchement de pve2.
-
-### 4.6 Ajouter les ports dans les bridges
+### 4.7 Ajouter les ports dans les bridges
 
 ```routeros
 # br-vmstore — iSCSI (pas de VLAN)
-/interface bridge port add bridge=br-vmstore interface=sfp-sfpplus12 hw=yes
+/interface bridge port add bridge=br-vmstore interface=sfp-sfpplus11 hw=yes
 /interface bridge port add bridge=br-vmstore interface=sfp-sfpplus13 hw=yes
 /interface bridge port add bridge=br-vmstore interface=sfp-sfpplus15 hw=yes
 
-# bridge1 — uplink CRS310 (trunk, admit-all)
-/interface bridge port add bridge=bridge1 interface=sfp-sfpplus1 \
-  frame-types=admit-all pvid=1 hw=yes
-
-# bridge1 — NAS backup (access VLAN 50, untagged)
-/interface bridge port add bridge=bridge1 interface=sfp-sfpplus11 \
+# br-backup — backup VLAN 50 (NAS untagged, hosts tagged)
+/interface bridge port add bridge=br-backup interface=sfp-sfpplus12 \
   frame-types=admit-only-untagged-and-priority-tagged pvid=50 hw=yes
 
-# bridge1 — pve1 backup (trunk VLAN 50, tagged)
-/interface bridge port add bridge=bridge1 interface=sfp-sfpplus14 \
+/interface bridge port add bridge=br-backup interface=sfp-sfpplus14 \
   frame-types=admit-only-vlan-tagged pvid=1 hw=yes
 
-# bridge1 — pve2 backup (trunk VLAN 50, tagged) — inactif jusqu'au branchement
-/interface bridge port add bridge=bridge1 interface=sfp-sfpplus16 \
+/interface bridge port add bridge=br-backup interface=sfp-sfpplus16 \
   frame-types=admit-only-vlan-tagged pvid=1 hw=yes
+
+# bridge1 — uplink CRS310 uniquement
+/interface bridge port add bridge=bridge1 interface=sfp-sfpplus1 \
+  frame-types=admit-all pvid=1 hw=yes
 ```
 
-### 4.7 Configurer la table VLAN sur bridge1
+### 4.8 Configurer la table VLAN sur br-backup
 
 ```routeros
-/interface bridge vlan add bridge=bridge1 vlan-ids=50 \
-  tagged=sfp-sfpplus1,sfp-sfpplus14,sfp-sfpplus16 \
-  untagged=sfp-sfpplus11
+/interface bridge vlan add bridge=br-backup vlan-ids=50 \
+  tagged=sfp-sfpplus14,sfp-sfpplus16 \
+  untagged=sfp-sfpplus12
 ```
 
-### 4.8 Vérification
+### 4.9 Vérification
 
 ```routeros
 # Vérifier les bridges
 /interface bridge print
 
-# Vérifier les ports
-/interface bridge port print
+# Vérifier les ports de br-backup
+/interface bridge port print detail where bridge=br-backup
 
-# Vérifier les VLANs
-/interface bridge vlan print
+# Vérifier les VLANs de br-backup
+/interface bridge vlan print where bridge=br-backup
 
 # Vérifier les MTU des interfaces
-/interface print where name~"sfp-sfpplus"
+/interface print detail where name~"sfp-sfpplus1[1-6]"
 ```
 
 Résultats attendus :
 
-- `br-vmstore` : `mtu=9000 actual-mtu=9000`
+- `br-vmstore` : `mtu=9000 actual-mtu=9000 vlan-filtering=no`
+- `br-backup` : `mtu=9000 actual-mtu=9000 vlan-filtering=yes`
 - `bridge1` : `mtu=1500 vlan-filtering=yes`
-- sfp12, sfp13, sfp14, sfp15 : `actual-mtu=9000 l2mtu=9018`
-- sfp11 : `actual-mtu=1500`
-- VLAN 50 : tagged=sfp1,sfp14,sfp16 / untagged=sfp11
+- sfp11–sfp16 : `mtu=9000 l2mtu=9018`
+- VLAN 50 sur br-backup : tagged=sfp14,sfp16 / untagged=sfp12
 
-### 4.9 Sauvegarder la configuration
+### 4.10 Sauvegarder la configuration
 
 ```routeros
-/system backup save name=crs317-config-initial
+/system backup save name=crs317-config-br-backup
 ```
 
 ---
 
 ## 5. Ajout de pve2 (à faire)
 
-Quand pve2 sera branché sur sfp15 (iSCSI) et sfp16 (backup), effectuer :
+Quand pve2 sera branché sur sfp15 (iSCSI) et sfp16 (backup), le MTU est déjà configuré sur les
+deux ports. La config bridge et VLAN est déjà en place. Il suffira de vérifier que les liens
+sont actifs (flag `R`) après branchement :
 
 ```routeros
-# Passer sfp16 en MTU 9000
-/interface set sfp-sfpplus16 l2mtu=9018 mtu=9000
+/interface bridge port print detail where interface=sfp-sfpplus15
+/interface bridge port print detail where interface=sfp-sfpplus16
 ```
-
-La config bridge et VLAN est déjà en place — sfp15 et sfp16 sont déjà membres des bridges respectifs. Il suffira de vérifier que les liens sont actifs (flag `R`) après branchement.
 
 ---
 
 ## 6. Dépannage
 
-### br-vmstore affiche `MTU > L2MTU`
+### br-backup ou br-vmstore affiche `MTU > L2MTU`
 
 Cause : Un port membre a un l2mtu insuffisant (1584 au lieu de 9018).
 
 ```routeros
 # Identifier le port fautif
-/interface print where name~"sfp-sfpplus"
+/interface print detail where name~"sfp-sfpplus1[1-6]"
 # Corriger
 /interface set sfp-sfpplus<X> l2mtu=9018 mtu=9000
 # Retirer et remettre le port dans le bridge pour forcer la mise à jour
 /interface bridge port remove [find interface=sfp-sfpplus<X>]
-/interface bridge port add bridge=br-vmstore interface=sfp-sfpplus<X> hw=yes
+/interface bridge port add bridge=<bridge> interface=sfp-sfpplus<X> hw=yes
 ```
+
+> Penser à vérifier sfp16 (pve2, inactif) — un port inactif membre d'un bridge peut quand même
+> brider son actual-mtu.
 
 ### Perte d'accès SSH au switch pendant la configuration
 
-Ne jamais retirer sfp-sfpplus1 de bridge1 — c'est le port uplink vers le CRS310 qui porte l'accès management. Pour retirer tous les autres ports sans couper la session :
-
-```routeros
-/interface bridge port remove [find bridge=bridge1 interface!=sfp-sfpplus1]
-```
+Ne jamais retirer sfp-sfpplus1 de bridge1 — c'est le port uplink vers le CRS310 qui porte
+l'accès management.
 
 ### VLAN 50 ne passe pas vers le NAS
 
-Vérifier que sfp11 est bien en `admit-only-untagged-and-priority-tagged` avec `pvid=50` et qu'il apparaît dans `current-untagged` du VLAN 50 :
+Vérifier que sfp12 est bien en `admit-only-untagged-and-priority-tagged` avec `pvid=50` et
+qu'il apparaît dans `current-untagged` du VLAN 50 sur br-backup :
 
 ```routeros
 /interface bridge vlan print detail where vlan-ids=50
-/interface bridge port print detail where interface=sfp-sfpplus11
+/interface bridge port print detail where interface=sfp-sfpplus12
 ```
